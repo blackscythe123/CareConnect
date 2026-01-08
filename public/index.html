@@ -648,8 +648,10 @@ document.querySelectorAll('.tabs button').forEach(btn=>{
     });
 });
 
-// -------- WebSocket ECG & MPU --------
-let ws = new WebSocket(`ws://${window.location.hostname}:8080/ws`);
+// Use wss for HTTPS and ws for HTTP automatically
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
 let ecgValues = Array(50).fill(0);
 
 let ctx = document.getElementById('ecgCanvas').getContext('2d');
