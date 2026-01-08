@@ -138,6 +138,11 @@ app.post('/api/email-config', (req, res) => {
   );
 });
 
+app.post("/data", (req, res) => {
+  console.log("Data received:", req.body);
+  res.send("OK");
+});
+
 app.get('/api/email-config', (req, res) => {
   db.get('SELECT email FROM email_config WHERE id = 1', [], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
