@@ -1,107 +1,107 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
-#include <WiFiClientSecure.h>
+#include <Wire.h>
+#include <MPU6050.h>
 
-// WiFi Credentials - UPDATE THESE FOR YOUR NETWORK
-const char* ssid = "AndroidAP";          // <-- set your SSID here
-const char* password = "123456789";      // <-- set your WiFi password here
+// WiFi
+const char* ssid = "AndroidAP";
+const char* password = "123456789";
 
-// Render Server Details (Do NOT include "https://" or "wss://")
-// UPDATE THIS after deploying to Render - it should match your Render service URL
-// Example: "careconnect-dashboard.onrender.com"
-const char* serverHost = "project123-0xep.onrender.com"; // <-- replace with your Render domain
-const uint16_t serverPort = 443;  // Always 443 for Render (HTTPS/WSS)
+// Render WebSocket Server
+const char* serverHost = "project123-0xep.onrender.com";
+const uint16_t serverPort = 443;
+const char* serverPath = "/ws";
 
 WebSocketsClient webSocket;
+MPU6050 mpu;
 
+// ECG input pin (your original working pin)
+const int ecgPin = 2;
+
+// sending rate
 unsigned long lastSend = 0;
-const unsigned long sendInterval = 2000; // 2s heartbeat / device data send
+const unsigned long sendInterval = 100; // 10Hz
 
-// Reconnection/backoff
-unsigned long lastReconnectAttempt = 0;
-unsigned long reconnectInterval = 5000; // start 5s
-const unsigned long maxReconnectInterval = 60000; // cap at 60s
+// WebSocket event handler
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      Serial.println("[WSS] Disconnected");
+      break;
 
-// Helper: initialize or re-init websocket connection
-void initWebSocket(){
-    Serial.printf("[WSS] Initializing connection to %s:%u...\n", serverHost, serverPort);
-    webSocket.beginSSL(serverHost, serverPort, "/ws");
-    // Use setInsecure() by default to avoid frequent cert issues on Render.
-    // Remove or change this for a production-pinned setup.
-    webSocket.setInsecure();
-    webSocket.onEvent(webSocketEvent);
+    case WStype_CONNECTED:
+      Serial.println("[WSS] Connected to Render!");
+      webSocket.sendTXT("{\"type\":\"auth\",\"role\":\"device\"}");
+      break;
+
+    case WStype_TEXT:
+      Serial.printf("[WSS] Received: %s\n", payload);
+      break;
+  }
 }
 
-void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.println("[WSS] Disconnected!");
-            // schedule reconnect
-            lastReconnectAttempt = millis();
-            break;
-        case WStype_CONNECTED:
-            Serial.printf("[WSS] Connected\n");
-            // reset backoff
-            reconnectInterval = 5000;
-            // Identify as device upon connection
-            webSocket.sendTXT("{\"type\":\"auth\",\"role\":\"device\"}");
-            break;
-        case WStype_TEXT:
-            Serial.printf("[WSS] Received: %s\n", payload);
-            // handle incoming JSON messages here if needed
-            break;
-        case WStype_ERROR:
-            Serial.println("[WSS] Error occurred!");
-            break;
-        case WStype_PING:
-            Serial.println("[WSS] Ping received");
-            break;
-        case WStype_PONG:
-            Serial.println("[WSS] Pong received");
-            break;
-    }
+void initWebSocket() {
+  Serial.printf("[WSS] Connecting to %s:%u%s\n", serverHost, serverPort, serverPath);
+  webSocket.beginSSL(serverHost, serverPort, serverPath, "");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(5000);
 }
 
 void setup() {
-    Serial.begin(115200);
+  Serial.begin(115200);
 
-    WiFi.begin(ssid, password);
-    Serial.print("[WIFI] Connecting");
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("\n[WIFI] Connected");
+  // ECG input
+  pinMode(ecgPin, INPUT);
 
-    initWebSocket();
+  // WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("[WIFI] Connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(50);
+  }
+  Serial.println("\n[WIFI] Connected!");
+
+  // MPU6050 – default ESP32 I2C pins 21/22 automatically
+  Wire.begin();
+  mpu.initialize();
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 NOT FOUND!");
+  } else {
+    Serial.println("MPU6050 Connected!");
+  }
+
+  initWebSocket();
 }
 
-void sendDeviceData(){
-    if(webSocket.isConnected()){
-        // example payload; replace with your sensor readings
-        String msg = "{\"type\":\"device-data\",\"ecg\":123,\"ax\":1.5}";
-        webSocket.sendTXT(msg);
-        Serial.println("[WSS] Data Sent");
-    } else {
-        Serial.println("[WSS] Not connected, skipping send");
-    }
+void sendSensorData() {
+  if (!webSocket.isConnected()) return;
+
+  int ecgValue = analogRead(ecgPin);
+
+  int16_t ax, ay, az, gx, gy, gz;
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+  String msg = "{";
+  msg += "\"type\":\"device-data\",";
+  msg += "\"ecg\":" + String(ecgValue);
+  msg += ",\"ax\":" + String(ax);
+  msg += ",\"ay\":" + String(ay);
+  msg += ",\"az\":" + String(az);
+  msg += ",\"gx\":" + String(gx);
+  msg += ",\"gy\":" + String(gy);
+  msg += ",\"gz\":" + String(gz);
+  msg += "}";
+
+  webSocket.sendTXT(msg);
+  Serial.println(msg);
 }
 
 void loop() {
-    webSocket.loop();
+  webSocket.loop();
 
-    // Reconnect logic with exponential backoff
-    if(!webSocket.isConnected() && (millis() - lastReconnectAttempt > reconnectInterval)){
-        Serial.printf("[WSS] Attempting reconnect (interval %lums)...\n", reconnectInterval);
-        initWebSocket();
-        lastReconnectAttempt = millis();
-        reconnectInterval = min(maxReconnectInterval, reconnectInterval * 2);
-    }
-
-    // Periodic device heartbeat / data send
-    if(millis() - lastSend > sendInterval){
-        lastSend = millis();
-        sendDeviceData();
-    }
+  if (millis() - lastSend > sendInterval) {
+    lastSend = millis();
+    sendSensorData();
+  }
 }
-
