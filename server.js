@@ -17,15 +17,37 @@ const PORT = process.env.PORT || 8080;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// Validate required environment variables
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('❌ Missing required environment variables:');
+  if (!SUPABASE_URL) console.error('   - SUPABASE_URL');
+  if (!SUPABASE_SERVICE_ROLE_KEY) console.error('   - SUPABASE_SERVICE_ROLE_KEY');
+  console.error('Please set these in your Render dashboard or .env file');
+  process.exit(1);
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-// console.log(SUPABASE_URL)
+console.log('✅ Connected to Supabase:', SUPABASE_URL);
+
 const app = express();
 const server = http.createServer(app);
+
+// -------- WebSocket Clients Set (declared early for health check) --------
+let clients = new Set();
 
 // -------- Middlewares --------
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// -------- Health Check (Required for Render) --------
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    websocketClients: clients.size
+  });
+});
 
 // -------- Email Config --------
 let emailConfig = { email: '', password: '' };
@@ -119,7 +141,6 @@ app.get('/api/consumption-logs', async (req, res) => {
 });
 
 // -------- Emergency --------
-let clients = new Set();
 function broadcast(msg) { for (const ws of clients) if (ws.readyState === 1) ws.send(msg); }
 
 app.post('/api/emergency', async (req, res) => {

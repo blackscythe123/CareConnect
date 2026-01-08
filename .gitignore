@@ -33,3 +33,4 @@ logs/
 
 # Optional: ignore coverage
 coverage/
+render.yaml
