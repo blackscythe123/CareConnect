@@ -744,7 +744,8 @@ document.getElementById('saveEmailBtn').addEventListener('click', async () => {
 
 // Load email config on page load
 async function loadEmailConfig() {
-    const res = await fetch('/api/email-config');
+    const res = await fetch(`${window.location.origin}/api/reminders`);
+
     const data = await res.json();
     if (data.email) {
         document.getElementById('adminEmail').value = data.email;
