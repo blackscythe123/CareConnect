@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<!-- PWA / WebAPK -->
+<meta name="theme-color" content="#667eea">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
 <title>CareConnect Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
@@ -658,7 +662,7 @@ let ctx = document.getElementById('ecgCanvas').getContext('2d');
 const ecgChart = new Chart(ctx,{
     type:'line',
     data:{labels:Array(50).fill(""), datasets:[{label:"ECG", data:ecgValues, borderColor:"#667eea", borderWidth:3, fill:false, tension:0.3}]},
-    options:{animation:false, scales:{y:{min:0,max:1023}, x:{display:false}}, plugins:{legend:{display:false}}}
+    options:{animation:false, scales:{y:{min:0,max:4200}, x:{display:false}}, plugins:{legend:{display:false}}}
 });
 
 // 3D arrow
@@ -932,17 +936,57 @@ async function loadReminders(){
         return `
             <div>
                 <span>${displayText} — ${r.iso_date?new Date(r.iso_date).toLocaleString():'No date'}</span>
-                <button data-id="${r.id}" class="blue" onclick="deleteReminder(${r.id})">Delete</button>
+                <button data-id="${r.id}" class="blue delete-reminder">Delete</button>
             </div>
         `;
     }).join('');
+
+    // Attach delete handlers to reminder list buttons
+    document.querySelectorAll('.delete-reminder').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const id = btn.dataset.id;
+            await deleteReminder(id);
+        });
+    });
     
     loadToday(reminders);
+    // Attach handlers for today's action buttons after rendering
+    document.querySelectorAll('.today-action').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const medId = btn.dataset.medicineId;
+            const medDetails = btn.dataset.medicineDetails;
+            if (medId) {
+                try {
+                    await consumeMedicine(medId, medDetails);
+                } catch (err) {
+                    console.warn('Failed to consume medicine before deleting reminder', err);
+                }
+            }
+            await deleteReminder(id);
+        });
+    });
 }
 
 async function deleteReminder(id) {
-    await fetch('/api/reminders/'+id,{method:"DELETE"});
-    loadReminders();
+    if (!confirm('Are you sure you want to delete this reminder?')) return;
+    try {
+        const res = await fetch('/api/reminders/'+id, { method: 'DELETE' });
+        if (!res.ok) {
+            if (res.status === 404) {
+                // Refresh list in case it was already deleted elsewhere
+                loadReminders();
+                alert('Reminder not found (it may have already been deleted). List refreshed.');
+                return;
+            }
+            const err = await res.json().catch(() => ({ error: res.statusText }));
+            alert('Failed to delete reminder: ' + (err.error || res.statusText));
+            return;
+        }
+        loadReminders();
+    } catch (err) {
+        alert('Network error while deleting reminder');
+    }
 }
 
 function loadToday(reminders){
@@ -962,7 +1006,7 @@ function loadToday(reminders){
             return `
                 <div class="infoBox" style="background:#fff;justify-content:space-between">
                     <span>${displayText} — ${new Date(r.iso_date).toLocaleTimeString()}</span>
-                    <button class="pink" onclick="${isMedicine ? `consumeMedicine(${r.medicine_id}, '${r.details}'); deleteReminder(${r.id})` : `deleteReminder(${r.id})`}">✔</button>
+                    <button class="pink today-action" data-id="${r.id}" data-medicine-id="${isMedicine ? r.medicine_id : ''}" data-medicine-details="${isMedicine ? (r.details || 'Medicine') : ''}">✔</button>
                 </div>
             `;
         }).join('');

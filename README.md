@@ -75,6 +75,24 @@ const char* serverHost = "your-service.onrender.com"; // e.g. careconnect-dashbo
 
 - Server: Check `/health` to confirm the service is running and see `websocketClients` count.
 
+- Reminders API (examples):
+```bash
+# Create a reminder
+curl -X POST -H 'Content-Type: application/json' -d '{"title":"medicine","details":"Aspirin","iso_date":"2026-01-09T12:00:00Z"}' http://localhost:8080/api/reminders
+
+# List reminders
+curl http://localhost:8080/api/reminders
+
+# Get a reminder by id
+curl http://localhost:8080/api/reminders/1
+
+# Update a reminder
+curl -X PATCH -H 'Content-Type: application/json' -d '{"details":"New details"}' http://localhost:8080/api/reminders/1
+
+# Delete a reminder
+curl -X DELETE http://localhost:8080/api/reminders/1
+```
+
 ---
 
 ## Troubleshooting
