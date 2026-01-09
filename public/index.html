@@ -662,7 +662,7 @@ let ctx = document.getElementById('ecgCanvas').getContext('2d');
 const ecgChart = new Chart(ctx,{
     type:'line',
     data:{labels:Array(50).fill(""), datasets:[{label:"ECG", data:ecgValues, borderColor:"#667eea", borderWidth:3, fill:false, tension:0.3}]},
-    options:{animation:false, scales:{y:{min:0,max:1023}, x:{display:false}}, plugins:{legend:{display:false}}}
+    options:{animation:false, scales:{y:{min:0,max:4200}, x:{display:false}}, plugins:{legend:{display:false}}}
 });
 
 // 3D arrow
