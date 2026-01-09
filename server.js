@@ -150,6 +150,30 @@ app.post('/api/emergency', async (req, res) => {
   res.json({ ok: true });
 });
 
+const mqtt = require('mqtt');
+
+/* ================= MQTT ================= */
+const MQTT_BROKER = 'mqtt://broker.hivemq.com';
+const MQTT_TOPIC = 'project123/device/data';
+
+const mqttClient = mqtt.connect(MQTT_BROKER);
+
+mqttClient.on('connect', () => {
+  console.log('✅ Connected to MQTT broker');
+  mqttClient.subscribe(MQTT_TOPIC);
+});
+
+mqttClient.on('message', (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    latestDeviceData = data;
+    broadcast(JSON.stringify({ type: 'device-data', data }));
+  } catch (e) {
+    console.error('MQTT parse error');
+  }
+});
+
+
 // -------- WebSocket Server --------
 const wss = new WebSocketServer({ server, path: "/ws" });
 let latestDeviceData = null;
