@@ -40,6 +40,15 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// -------- JSON parse error handler (returns 400 instead of HTML stack) --------
+app.use((err, req, res, next) => {
+  // body-parser sets err.type === 'entity.parse.failed' for invalid JSON
+  if (err && (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400 && 'body' in err))) {
+    return res.status(400).json({ error: 'Invalid JSON in request body' });
+  }
+  next(err);
+});
+
 // -------- Health Check (Required for Render) --------
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -128,10 +137,47 @@ app.get('/api/reminders', async (req, res) => {
   error ? res.status(500).json({ error }) : res.json(data);
 });
 
+app.get('/api/reminders/:id', async (req, res) => {
+  const id = req.params.id;
+  const { data, error } = await supabase.from('reminders').select('*').eq('id', id).single();
+  if (error) return res.status(500).json({ error });
+  if (!data) return res.status(404).json({ error: 'Reminder not found', id });
+  res.json(data);
+});
+
 app.post('/api/reminders', async (req, res) => {
   const { title, details, iso_date, repeats, medicine_id } = req.body;
-  const { data, error } = await supabase.from('reminders').insert([{ title, details, iso_date, repeats, medicine_id }]).select().single();
-  error ? res.status(500).json({ error }) : res.json(data);
+  if (!title) return res.status(400).json({ error: 'Title is required' });
+  const insertRow = { title, details: details || null, iso_date: iso_date || null, repeats: repeats || null, medicine_id: medicine_id || null };
+  const { data, error } = await supabase.from('reminders').insert([insertRow]).select().single();
+  if (error) return res.status(500).json({ error });
+  res.status(201).json(data);
+});
+
+app.patch('/api/reminders/:id', async (req, res) => {
+  const id = req.params.id;
+  const allowed = ['title','details','iso_date','repeats','medicine_id'];
+  const updates = {};
+  for (const k of allowed) if (k in req.body) updates[k] = req.body[k];
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+  const { data, error } = await supabase.from('reminders').update(updates).eq('id', id).select().single();
+  if (error) return res.status(500).json({ error });
+  if (!data) return res.status(404).json({ error: 'Reminder not found', id });
+  res.json(data);
+});
+
+app.delete('/api/reminders/:id', async (req, res) => {
+  const id = req.params.id;
+  console.log(`Deleting reminder id=${id}`);
+  // Use .select() so Supabase returns deleted rows; otherwise data can be null
+  const { data, error } = await supabase.from('reminders').delete().eq('id', id).select();
+  if (error) {
+    console.error('Error deleting reminder:', error);
+    return res.status(500).json({ error });
+  }
+  if (!data || data.length === 0) return res.status(404).json({ error: 'Reminder not found', id });
+  // Return deleted rows for clarity
+  res.json({ deleted: data.length, id, rows: data });
 });
 
 // Consumption logs
