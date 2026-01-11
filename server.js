@@ -45,20 +45,44 @@ let latestDeviceData = null;
 const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on('connection', ws => {
   clients.add(ws);
+  console.log('[WS] Client connected. Total:', clients.size);
 
-  // Send latest data immediately
-  if (latestDeviceData) ws.send(JSON.stringify({ type: 'device-data', data: latestDeviceData }));
+  // Send latest data immediately to new client
+  if (latestDeviceData) {
+    ws.send(JSON.stringify({ type: 'device-data', data: latestDeviceData }));
+  }
 
   ws.on('message', msg => {
     try {
-      const data = JSON.parse(msg.toString());
-      latestDeviceData = data;
-      // Broadcast to all clients
-      for (const c of clients) if (c.readyState === 1) c.send(JSON.stringify({ type: 'device-data', data }));
-    } catch (_) {}
+      const parsed = JSON.parse(msg.toString());
+      
+      // Handle device authentication
+      if (parsed.type === 'auth' && parsed.role === 'device') {
+        console.log('[WS] Arduino device authenticated');
+        return;
+      }
+      
+      // Handle device data - Arduino sends: {type:"device-data", ecg:..., ax:..., etc}
+      if (parsed.type === 'device-data') {
+        // Extract the sensor data (everything except 'type')
+        const { type, ...sensorData } = parsed;
+        latestDeviceData = sensorData;
+        
+        // Broadcast to all clients with consistent format
+        const broadcastMsg = JSON.stringify({ type: 'device-data', data: sensorData });
+        for (const c of clients) {
+          if (c.readyState === 1) c.send(broadcastMsg);
+        }
+      }
+    } catch (e) {
+      console.warn('[WS] Parse error:', e.message);
+    }
   });
 
-  ws.on('close', () => clients.delete(ws));
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log('[WS] Client disconnected. Total:', clients.size);
+  });
 });
 
 // -------- Helpers --------
