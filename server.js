@@ -184,3 +184,19 @@ app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'public/index.html'))
 
 // -------- Start Server --------
 server.listen(PORT, ()=>console.log(`Server running on port ${PORT}`));
+
+
+// GET /api/medicines/low-stock
+app.get('/api/medicines/low-stock', async (req, res) => {
+  const { data, error } = await supabase
+    .from('medicines')
+    .select('*')
+    .lte('count', 5);   // <= 5 means low stock
+ console.log("LOW STOCK:", data);
+
+  if (error) return res.status(500).json({ error });
+  res.json(data || []);
+});
+
+
+

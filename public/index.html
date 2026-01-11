@@ -109,6 +109,85 @@ nav .tabs button.active {
 @media(max-width: 768px){
     .admin-grid { grid-template-columns: 1fr; }
 }
+.med-card {
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin: 8px 0;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+}
+
+.med-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+
+.med-card-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.med-card strong {
+    font-size: 16px;
+    color: #2d3748;
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 700;
+}
+
+.med-card-qty {
+    font-size: 13px;
+    color: #718096;
+    font-weight: 500;
+}
+
+.delete-btn {
+    width: 24px !important;
+    height: 24px;
+    min-width: 24px;
+    padding: 0;
+    border-radius: 6px;
+    background: #e53e3e;
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.delete-btn:hover {
+    background: #c53030;
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px rgba(229,62,62,0.4);
+}
+
+.low {
+    border-left: 4px solid #f093fb;
+}
+
+.critical {
+    border-left: 4px solid #e53e3e;
+}
+
+.empty-msg {
+    padding: 16px;
+    text-align: center;
+    color: #718096;
+}
+
 
 .ecgContainer { grid-area: ecg; overflow: hidden; }
 .topRightContainer { grid-area: topRight; overflow: hidden; }
@@ -1203,6 +1282,13 @@ button.red:hover {
             <button id="saveEmailBtn" class="green" style="margin-top:12px;">💾 Save Email Config</button>
         </div>
 
+<div style="background:#f7fafc;padding:16px;border-radius:12px;margin-top:20px;">
+    <h3 style="margin:0 0 12px 0;font-size:16px;color:#2d3748;">🛒 Medicines to Reorder</h3>
+    <div id="reorderList">
+        <div style="padding:16px;text-align:center;color:#718096;">Loading...</div>
+    </div>
+</div>
+
         <!-- Medicine Cabinet Button -->
         <button id="medicineCabinetBtn" class="green" style="width:100%;padding:20px;font-size:18px;margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:10px;">
             <span style="font-size:24px;font-weight:700;">+</span> Medicine Cabinet
@@ -2190,6 +2276,57 @@ setTimeout(() => {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
 }, 100);
+
+
+let reorderItems = [];
+
+
+async function loadLowStock() {
+  try {
+    const res = await fetch('/api/medicines/low-stock');
+    const data = await res.json();
+
+    reorderItems = data.map(med => ({
+      name: med.name,
+      currentQty: med.count,
+      buyUrl: `https://www.1mg.com/search/all?name=${encodeURIComponent(med.name)}`
+    }));
+
+    updateReorderDisplay();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+
+function updateReorderDisplay() {
+  const container = document.getElementById('reorderList');
+
+  if (!reorderItems.length) {
+    container.innerHTML = `<div class="empty-msg">👍 Stock ok — no low items</div>`;
+    return;
+  }
+
+  container.innerHTML = reorderItems.map((item, index) => {
+    const statusClass = item.currentQty === 0 ? 'critical' : 'low';
+    const statusText = item.currentQty === 0 ? 'OUT OF STOCK' : 'Low Stock';
+
+    return `
+      <div class="med-card ${statusClass}" onclick="window.open('${item.buyUrl}', '_blank')" title="Click to order on 1mg">
+        <div class="med-card-content">
+          <strong>${item.name}</strong>
+          <div class="med-card-qty">Qty: ${item.currentQty} • ${statusText}</div>
+        </div>
+        <button class="delete-btn" onclick="event.stopPropagation(); removeReorder(${index})" title="Remove">×</button>
+      </div>
+    `;
+  }).join('');
+}
+// run once on page load
+loadLowStock();
+
+
+
 </script>
 
 </body>
