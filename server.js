@@ -71,30 +71,47 @@ let harSession = null;
 })();
 
 // Extract features from a window of samples (same as Python training)
+// Extract features EXACTLY matching Python training
 function extractHarFeatures(windowArr) {
+
   const cols = ['ax', 'ay', 'az', 'gx', 'gy', 'gz'];
   const features = [];
 
   for (const col of cols) {
-    const data = windowArr.map(s => s[col]);
-    const n = data.length || 1;
 
+    const data = windowArr.map(s => s[col]);
+    const n = data.length;
+
+    // mean
     const mean = data.reduce((a, b) => a + b, 0) / n;
 
+    // variance and std
     const variance = data.reduce((a, b) => {
       const d = b - mean;
       return a + d * d;
     }, 0) / n;
 
     const std = Math.sqrt(variance);
+
+    // min and max
     const min = Math.min(...data);
     const max = Math.max(...data);
 
-    const sorted = [...data].sort((a, b) => a - b);
-    const mid = Math.floor(n / 2);
-    const median = n % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    // range (IMPORTANT)
+    const range = max - min;
 
-    features.push(mean, std, min, max, median, variance);
+    // energy (IMPORTANT)
+    const energy = data.reduce((a, b) => a + (b * b), 0);
+
+    // EXACT SAME ORDER AS TRAINING
+    features.push(
+      mean,
+      std,
+      min,
+      max,
+      range,
+      energy
+    );
   }
 
   return new Float32Array(features);
@@ -132,14 +149,21 @@ wss.on('connection', ws => {
           if (c.readyState === 1) c.send(broadcastMsg);
         }
 
+        //Accelerometer (±2g mode):
+        //16384 LSB = 1g
+
+        //Gyroscope (±250°/s mode):
+        //131 LSB = 1°/s
+
         // ---- HAR window + ONNX prediction ----
         const sample = {
-          ax: Number(sensorData.ax),
-          ay: Number(sensorData.ay),
-          az: Number(sensorData.az),
-          gx: Number(sensorData.gx),
-          gy: Number(sensorData.gy),
-          gz: Number(sensorData.gz)
+          ax: Number(sensorData.ax) / 16384.0,
+          ay: Number(sensorData.ay) / 16384.0,
+          az: Number(sensorData.az) / 16384.0,
+        
+          gx: Number(sensorData.gx) / 131.0,
+          gy: Number(sensorData.gy) / 131.0,
+          gz: Number(sensorData.gz) / 131.0
         };
 
         if (harSession && Object.values(sample).every(v => Number.isFinite(v))) {
@@ -157,8 +181,12 @@ wss.on('connection', ws => {
                 try {
                   const features = extractHarFeatures(harWindow); // Float32Array length 36
                   const tensor = new ort.Tensor('float32', features, [1, 36]);
-
+                  console.log(features);
                   const results = await harSession.run({ float_input: tensor });
+                  console.log('[HAR] Output keys:', Object.keys(results));
+                  for (const [name, tensor] of Object.entries(results)) {
+                    console.log('[HAR] Output', name, 'shape:', tensor.dims, 'first values:', Array.from(tensor.data).slice(0, 10));
+                  }
                   const outputNames = Object.keys(results);
 
                   // Adjust these names if your ONNX export uses different output names
