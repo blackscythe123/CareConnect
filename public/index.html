@@ -300,34 +300,117 @@ nav .tabs button.active {
 .orientation-info .value { font-weight: 700; font-size: 14px; }
 
 /* Activity prediction card */
+/* Activity prediction card */
 .activity-card {
     margin: 20px 0 0 0;
-    padding: 16px 22px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: #1f2933;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: 0 8px 20px rgba(244,114,182,0.4);
+    padding: 16px 18px 14px 18px;
+    border-radius: 20px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.07);
 }
 .activity-card-title {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #4b5563;
+    letter-spacing: 1.2px;
+    color: #94a3b8;
+    margin-bottom: 10px;
 }
-.activity-card-main {
-    font-size: 22px;
-    font-weight: 800;
-    margin-top: 4px;
+.activity-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
-.activity-card-confidence {
-    font-size: 13px;
+.activity-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border-radius: 10px;
+    padding: 6px 12px;
+    overflow: hidden;
+    background: #f8fafc;
+    min-height: 34px;
+}
+.activity-row-bar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 0%;
+    opacity: 0.15;
+    transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+    border-radius: 10px;
+}
+
+/* Per-class gradients */
+.activity-row[data-class="Falling"]  .activity-row-bar { background: linear-gradient(90deg, #ef4444, #f97316); }
+.activity-row[data-class="Lying"]    .activity-row-bar { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.activity-row[data-class="Running"]  .activity-row-bar { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.activity-row[data-class="Sitting"]  .activity-row-bar { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
+.activity-row[data-class="Standing"] .activity-row-bar { background: linear-gradient(90deg, #10b981, #34d399); }
+.activity-row[data-class="Walking"]  .activity-row-bar { background: linear-gradient(90deg, #ec4899, #f472b6); }
+
+.activity-row-emoji {
+    font-size: 14px;
+    margin-right: 8px;
+    z-index: 1;
+    flex-shrink: 0;
+}
+.activity-row-label {
+    font-size: 12px;
     font-weight: 600;
-    color: #111827;
-    text-align: right;
+    color: #64748b;
+    z-index: 1;
+    flex: 1;
+    transition: color 0.2s;
+}
+.activity-row-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    z-index: 1;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.2s;
+}
+
+/* Active row — full gradient, white text */
+.activity-row--active { background: transparent; }
+.activity-row--active .activity-row-bar { opacity: 1 !important; }
+.activity-row--active .activity-row-label { color: #ffffff; font-weight: 700; }
+.activity-row--active .activity-row-value { color: rgba(255,255,255,0.9); }
+
+/* Summary pill matches active class */
+.activity-summary-btn {
+    margin-top: 10px;
+    width: 100%;
+    border-radius: 10px;
+    border: none;
+    padding: 9px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: default;
+    transition: background 0.3s ease;
+}
+.activity-summary-btn[data-class="Falling"]  { background: linear-gradient(135deg, #ef4444, #f97316); }
+.activity-summary-btn[data-class="Lying"]    { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
+.activity-summary-btn[data-class="Running"]  { background: linear-gradient(135deg, #d97706, #fbbf24); }
+.activity-summary-btn[data-class="Sitting"]  { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+.activity-summary-btn[data-class="Standing"] { background: linear-gradient(135deg, #059669, #34d399); }
+.activity-summary-btn[data-class="Walking"]  { background: linear-gradient(135deg, #db2777, #f472b6); }
+
+.activity-summary-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.8);
+    animation: act-pulse 1.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+@keyframes act-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.65); }
 }
 
 #threeCanvas { width: 100%; height: 100%; border-radius: 12px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
@@ -1221,11 +1304,13 @@ button.red:hover {
     </div>
 
     <div id="activityCard" class="activity-card">
-        <div>
-            <div class="activity-card-title">Detected Activity</div>
-            <div class="activity-card-main" id="activityName">--</div>
+        <div class="activity-card-title">Detected Activity</div>
+        <div id="activityRows" class="activity-rows">
+            <!-- Rows will be populated dynamically -->
         </div>
-        <div class="activity-card-confidence" id="activityConfidence"></div>
+        <button type="button" id="activitySummary" class="activity-summary-btn">
+            Waiting for activity data...
+        </button>
     </div>
 
     <!-- Room Occupancy Section -->
@@ -1406,6 +1491,10 @@ button.red:hover {
 </div>
 
 <script>
+    const CLASS_EMOJIS = {
+    Falling: '⚠️', Lying: '🛌', Running: '🏃',
+    Sitting: '🪑', Standing: '🧍', Walking: '🚶'
+};
 // -------- Tabs --------
 document.querySelectorAll('.tabs button').forEach(btn=>{
     btn.addEventListener('click',()=>{
@@ -1963,16 +2052,53 @@ ws.onmessage = (event)=>{
                 updateTemperature(data.data.object, data.data.ambient);
             }
         } else if (data.type === 'activity') {
-            const activityNameEl = document.getElementById('activityName');
-            const activityConfEl = document.getElementById('activityConfidence');
-            if (activityNameEl) {
-                activityNameEl.textContent = data.data.predicted_activity || 'Unknown';
+            const activityRows = document.getElementById('activityRows');
+            const activitySummary = document.getElementById('activitySummary');
+            if (!activityRows) return;
+
+            const probs = data.data.probabilities || {};
+            const classes = ['Falling', 'Lying', 'Running', 'Sitting', 'Standing', 'Walking'];
+
+            let bestClass = data.data.predicted_activity;
+            let bestProb = data.data.confidence;
+
+            // Fallback if predicted_activity/confidence not present
+            if (!bestClass || typeof bestProb !== 'number') {
+                let maxP = -1;
+                let maxC = '';
+                for (const cls of classes) {
+                    const p = typeof probs[cls] === 'number' ? probs[cls] : 0;
+                    if (p > maxP) {
+                        maxP = p;
+                        maxC = cls;
+                    }
+                }
+                bestClass = maxC;
+                bestProb = maxP;
             }
-            if (activityConfEl && typeof data.data.confidence === 'number') {
-                activityConfEl.textContent = `Confidence: ${(data.data.confidence * 100).toFixed(1)}%`;
-            } else if (activityConfEl) {
-                activityConfEl.textContent = '';
-            }
+
+            // Replace your activityRows.innerHTML = ... block with:
+activityRows.innerHTML = classes.map(cls => {
+    const p = typeof probs[cls] === 'number' ? probs[cls] : 0;
+    const pct = (p * 100).toFixed(1);
+    const isActive = cls === bestClass;
+    return `
+        <div class="activity-row ${isActive ? 'activity-row--active' : ''}" data-class="${cls}">
+            <div class="activity-row-bar" style="width:${pct}%;"></div>
+            <span class="activity-row-emoji">${CLASS_EMOJIS[cls] ?? ''}</span>
+            <span class="activity-row-label">${cls}</span>
+            <span class="activity-row-value">${pct}%</span>
+        </div>
+    `;
+}).join('');
+
+if (activitySummary && bestClass) {
+    activitySummary.dataset.class = bestClass;
+    activitySummary.innerHTML = `
+        <div class="activity-summary-dot"></div>
+        ${CLASS_EMOJIS[bestClass] ?? ''} ${bestClass} — ${(bestProb * 100).toFixed(1)}% confidence
+    `;
+}
         }
         if(data.type==='emergency') { 
             alert("🚨 EMERGENCY ALERT RECEIVED!"); 
