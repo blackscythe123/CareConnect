@@ -6,16 +6,27 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
+const ort = require('onnxruntime-node');
+
+
+
 
 // -------- Environment --------
 const PORT = process.env.PORT || 8080;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// HAR / ONNX settings
+const HAR_MODEL_PATH = process.env.HAR_MODEL_PATH || path.join(__dirname, 'har_xgboost_model.onnx');
+// Size of sliding window used for HAR model; adjust to match training
+const HAR_WINDOW_SIZE = parseInt(process.env.HAR_WINDOW_SIZE || '10', 10);
+const HAR_MIN_INTERVAL_MS = parseInt(process.env.HAR_MIN_INTERVAL_MS || '2000', 10);
+
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('❌ Missing required environment variables');
@@ -41,6 +52,53 @@ app.use((err, req, res, next) => {
 // -------- WebSocket --------
 let clients = new Set();
 let latestDeviceData = null;
+let harWindow = [];
+let lastHarSentAt = 0;
+let harSession = null;
+
+// Load ONNX HAR model once at startup (if present)
+(async () => {
+  try {
+    if (!fs.existsSync(HAR_MODEL_PATH)) {
+      console.warn('[HAR] ONNX model not found at', HAR_MODEL_PATH);
+      return;
+    }
+    harSession = await ort.InferenceSession.create(HAR_MODEL_PATH);
+    console.log('[HAR] ONNX model loaded from', HAR_MODEL_PATH);
+  } catch (e) {
+    console.error('[HAR] Failed to load ONNX model:', e);
+  }
+})();
+
+// Extract features from a window of samples (same as Python training)
+function extractHarFeatures(windowArr) {
+  const cols = ['ax', 'ay', 'az', 'gx', 'gy', 'gz'];
+  const features = [];
+
+  for (const col of cols) {
+    const data = windowArr.map(s => s[col]);
+    const n = data.length || 1;
+
+    const mean = data.reduce((a, b) => a + b, 0) / n;
+
+    const variance = data.reduce((a, b) => {
+      const d = b - mean;
+      return a + d * d;
+    }, 0) / n;
+
+    const std = Math.sqrt(variance);
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+
+    const sorted = [...data].sort((a, b) => a - b);
+    const mid = Math.floor(n / 2);
+    const median = n % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+    features.push(mean, std, min, max, median, variance);
+  }
+
+  return new Float32Array(features);
+}
 
 const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on('connection', ws => {
@@ -72,6 +130,90 @@ wss.on('connection', ws => {
         const broadcastMsg = JSON.stringify({ type: 'device-data', data: sensorData });
         for (const c of clients) {
           if (c.readyState === 1) c.send(broadcastMsg);
+        }
+
+        // ---- HAR window + ONNX prediction ----
+        const sample = {
+          ax: Number(sensorData.ax),
+          ay: Number(sensorData.ay),
+          az: Number(sensorData.az),
+          gx: Number(sensorData.gx),
+          gy: Number(sensorData.gy),
+          gz: Number(sensorData.gz)
+        };
+
+        if (harSession && Object.values(sample).every(v => Number.isFinite(v))) {
+          harWindow.push(sample);
+          if (harWindow.length > HAR_WINDOW_SIZE) {
+            harWindow.shift();
+          }
+
+          if (harWindow.length === HAR_WINDOW_SIZE) {
+            const now = Date.now();
+            if (now - lastHarSentAt >= HAR_MIN_INTERVAL_MS) {
+              lastHarSentAt = now;
+
+              (async () => {
+                try {
+                  const features = extractHarFeatures(harWindow); // Float32Array length 36
+                  const tensor = new ort.Tensor('float32', features, [1, 36]);
+
+                  const results = await harSession.run({ float_input: tensor });
+                  const outputNames = Object.keys(results);
+
+                  // Adjust these names if your ONNX export uses different output names
+                  const probsTensor =
+                    results.output_probability ||
+                    results.probabilities ||
+                    results[outputNames[1]];
+                  const labelTensor =
+                    results.output_label ||
+                    results.predicted_class ||
+                    results[outputNames[0]];
+
+                  const probs = Array.from(probsTensor.data);
+                  const predictedClass = Number(labelTensor.data[0]);
+
+                  const confidence = Math.max(...probs);
+                  const activity_map = {
+                    0: "Falling",
+                    1: "Lying",
+                    2: "Running",
+                    3: "Sitting",
+                    4: "Standing",
+                    5: "Walking"
+                  };
+
+                  const probability_map = {};
+                  probs.forEach((p, i) => {
+                    if (activity_map[i] !== undefined) {
+                      probability_map[activity_map[i]] = p;
+                    }
+                  });
+
+                  const predictionPayload = {
+                    predicted_class: predictedClass,
+                    predicted_activity: activity_map[predictedClass] || 'Unknown',
+                    confidence,
+                    probabilities: probability_map
+                  };
+
+                  console.log('[HAR] Prediction:', {
+                    activity: predictionPayload.predicted_activity,
+                    confidence: predictionPayload.confidence,
+                    class: predictionPayload.predicted_class
+                  });
+
+                  const activityMsg = JSON.stringify({ type: 'activity', data: predictionPayload });
+                  for (const c of clients) {
+                    if (c.readyState === 1) c.send(activityMsg);
+                  }
+                } catch (e) {
+                  console.warn('[HAR] ONNX inference error:', e.message);
+                }
+              })();
+            }
+          }
         }
       }
     } catch (e) {

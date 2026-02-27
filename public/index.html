@@ -299,6 +299,37 @@ nav .tabs button.active {
 .orientation-info .label { color: #6b7280; font-size: 9px; }
 .orientation-info .value { font-weight: 700; font-size: 14px; }
 
+/* Activity prediction card */
+.activity-card {
+    margin: 20px 0 0 0;
+    padding: 16px 22px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: #1f2933;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 8px 20px rgba(244,114,182,0.4);
+}
+.activity-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #4b5563;
+}
+.activity-card-main {
+    font-size: 22px;
+    font-weight: 800;
+    margin-top: 4px;
+}
+.activity-card-confidence {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    text-align: right;
+}
+
 #threeCanvas { width: 100%; height: 100%; border-radius: 12px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
 
 button.green { 
@@ -1189,6 +1220,14 @@ button.red:hover {
         </div>
     </div>
 
+    <div id="activityCard" class="activity-card">
+        <div>
+            <div class="activity-card-title">Detected Activity</div>
+            <div class="activity-card-main" id="activityName">--</div>
+        </div>
+        <div class="activity-card-confidence" id="activityConfidence"></div>
+    </div>
+
     <!-- Room Occupancy Section -->
     <div class="roomOccupancySection">
         <h2>🚪 Room Occupancy Monitor</h2>
@@ -1922,6 +1961,17 @@ ws.onmessage = (event)=>{
             // Update temperature if temperature data is present
             if (typeof data.data.object !== 'undefined' && typeof data.data.ambient !== 'undefined') {
                 updateTemperature(data.data.object, data.data.ambient);
+            }
+        } else if (data.type === 'activity') {
+            const activityNameEl = document.getElementById('activityName');
+            const activityConfEl = document.getElementById('activityConfidence');
+            if (activityNameEl) {
+                activityNameEl.textContent = data.data.predicted_activity || 'Unknown';
+            }
+            if (activityConfEl && typeof data.data.confidence === 'number') {
+                activityConfEl.textContent = `Confidence: ${(data.data.confidence * 100).toFixed(1)}%`;
+            } else if (activityConfEl) {
+                activityConfEl.textContent = '';
             }
         }
         if(data.type==='emergency') { 
