@@ -34,6 +34,15 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Load email config from DB on startup so it survives restarts
+async function loadEmailConfig() {
+  const { data } = await supabase.from('email_config').select('*').eq('id', 1).single();
+  if (data?.email && data?.password) {
+    emailConfig = { email: data.email, password: data.password };
+    console.log('[Email] Config loaded for:', emailConfig.email);
+  }
+}
+loadEmailConfig();
 
 const app = express();
 const server = http.createServer(app);
@@ -278,15 +287,20 @@ app.get('/health', (_, res) => {
 
 // Email Config
 app.get('/api/email-config', async (_, res) => {
-  const { data } = await supabase.from('email_config').select('*').eq('id',1).single();
+  const { data } = await supabase.from('email_config').select('id, email').eq('id', 1).single();
   res.json(data || {});
 });
 
 app.post('/api/email-config', async (req, res) => {
   const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ ok: false, error: 'Email and password are required.' });
+  }
   emailConfig = { email, password };
-  await supabase.from('email_config').upsert({ id:1, email, password });
-  res.json({ ok:true });
+  const { error } = await supabase.from('email_config').upsert({ id: 1, email, password });
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  console.log('[Email] Config saved for:', email);
+  res.json({ ok: true });
 });
 
 // Medicines CRUD
@@ -314,7 +328,11 @@ app.post('/api/medicines/:id/consume', async (req,res)=>{
   const newCount=medData.count-1;
   await supabase.from('medicines').update({ count:newCount }).eq('id',id);
   await supabase.from('consumption_logs').insert([{ medicine_id:id, medicine_name:medData.name }]);
-  if(newCount===0) sendEmail(`🚨 ${medData.name} is OUT`, `Stock empty for ${medData.name}`);
+  if (newCount === 0) {
+    sendEmail(`🚨 ${medData.name} is OUT OF STOCK`, `The stock for "${medData.name}" has run out. Please restock immediately.`);
+  } else if (newCount <= 5) {
+    sendEmail(`⚠️ Low Stock Warning: ${medData.name}`, `Only ${newCount} unit(s) of "${medData.name}" remaining. Please restock soon.`);
+  }
   res.json({ success:true, newCount });
 });
 
